@@ -1,0 +1,98 @@
+{% extends "workshop/base.html" %}
+{% load dms %}
+{% block title %}Invoice {{ invoice.number }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between mb-3 d-print-none">
+  <a href="{{ invoice.job_card.get_absolute_url }}">&larr; Back to {{ invoice.job_card.number }}</a>
+  <button class="btn btn-primary" onclick="window.print()">Print</button>
+</div>
+
+<div class="card shadow-sm mx-auto" style="max-width: 1000px">
+  <div class="card-body p-4">
+    <div class="text-center mb-4">
+      <h1 class="h4 mb-0">SALES TAX INVOICE</h1>
+      <small class="text-muted">All amounts in PKR</small>
+    </div>
+
+    <div class="row mb-4">
+      <div class="col-6">
+        <h2 class="h6 text-uppercase text-muted">Seller</h2>
+        <strong>{{ invoice.seller_name }}</strong><br>
+        {{ invoice.seller_address|linebreaksbr }}<br>
+        {% if invoice.seller_phone %}Tel: {{ invoice.seller_phone }}<br>{% endif %}
+        NTN: {{ invoice.seller_ntn|default:"[NTN — PLACEHOLDER]" }}<br>
+        STRN: {{ invoice.seller_strn|default:"[STRN — PLACEHOLDER]" }}<br>
+        {% if invoice.seller_provincial_tax_authority %}{{ invoice.seller_provincial_tax_authority }} reg. no.: {{ invoice.seller_provincial_tax_reg_no|default:"[PLACEHOLDER]" }}{% endif %}
+      </div>
+      <div class="col-6 text-end">
+        <table class="table table-sm table-borderless w-auto ms-auto mb-3">
+          <tr><th class="text-end">Invoice no.</th><td>{{ invoice.number }}</td></tr>
+          <tr><th class="text-end">Date &amp; time</th><td>{{ invoice.issued_at|date:"d M Y H:i" }}</td></tr>
+          <tr><th class="text-end">Job card</th><td>{{ invoice.job_card.number }}</td></tr>
+          <tr><th class="text-end">Vehicle reg.</th><td>{{ invoice.vehicle_registration }}</td></tr>
+          <tr><th class="text-end">FBR invoice no.</th><td class="text-muted">[PLACEHOLDER — FBR integration not built]</td></tr>
+        </table>
+        <h2 class="h6 text-uppercase text-muted">Buyer</h2>
+        <strong>{{ invoice.buyer_name }}</strong><br>
+        {% if invoice.buyer_address %}{{ invoice.buyer_address|linebreaksbr }}<br>{% endif %}
+        {% if invoice.buyer_phone %}Tel: {{ invoice.buyer_phone }}<br>{% endif %}
+        {% if invoice.buyer_ntn %}NTN: {{ invoice.buyer_ntn }}<br>{% endif %}
+        {% if invoice.buyer_cnic %}CNIC: {{ invoice.buyer_cnic }}<br>{% endif %}
+        {% if not invoice.buyer_ntn and not invoice.buyer_cnic %}<span class="text-muted">Unregistered buyer</span>{% endif %}
+      </div>
+    </div>
+
+    <table class="table table-sm table-bordered">
+      <thead class="table-light">
+        <tr>
+          <th>#</th><th>Type</th><th>Description</th><th>HS code</th><th class="num">Qty</th><th>Unit</th>
+          <th class="num">Unit price</th><th class="num">Value excl. tax</th><th class="num">Tax rate</th>
+          <th class="num">Sales tax</th><th class="num">Value incl. tax</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for row in lines %}
+        <tr>
+          <td>{{ forloop.counter }}</td>
+          <td>{{ row.item.get_item_type_display }}</td>
+          <td>{{ row.item.description }}</td>
+          <td>{{ row.item.part.hs_code|default:"—" }}</td>
+          <td class="num">{{ row.item.quantity|floatformat:"-2" }}</td>
+          <td>{% if row.item.part %}{{ row.item.part.uom }}{% elif row.item.item_type == "LABOUR" %}HRS{% else %}JOB{% endif %}</td>
+          <td class="num">{{ row.item.unit_price|amount }}</td>
+          <td class="num">{{ row.item.line_total|amount }}</td>
+          <td class="num">{{ row.rate|floatformat:"-2" }}%</td>
+          <td class="num">{{ row.tax|amount }}</td>
+          <td class="num">{{ row.incl|amount }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="row">
+      <div class="col-md-6 small text-muted">
+        Goods (parts) taxed at {{ invoice.goods_tax_rate|floatformat:"-2" }}%; services (labour, sublet) at
+        {{ invoice.services_tax_rate|floatformat:"-2" }}%{% if invoice.seller_provincial_tax_authority %} ({{ invoice.seller_provincial_tax_authority }}){% endif %}.
+        <br>Rates and invoice layout are placeholders pending tax-adviser verification.
+      </div>
+      <div class="col-md-6">
+        <table class="table table-sm">
+          <tr><td>Labour</td><td class="num">{{ invoice.labour_total|amount }}</td></tr>
+          <tr><td>Parts</td><td class="num">{{ invoice.parts_total|amount }}</td></tr>
+          <tr><td>Sublet</td><td class="num">{{ invoice.sublet_total|amount }}</td></tr>
+          <tr class="fw-semibold"><td>Total excl. sales tax</td><td class="num">{{ invoice.total_excl_tax|amount }}</td></tr>
+          <tr><td>Sales tax on goods @ {{ invoice.goods_tax_rate|floatformat:"-2" }}%</td><td class="num">{{ invoice.goods_tax_amount|amount }}</td></tr>
+          <tr><td>Sales tax on services @ {{ invoice.services_tax_rate|floatformat:"-2" }}%</td><td class="num">{{ invoice.services_tax_amount|amount }}</td></tr>
+          <tr class="fw-semibold"><td>Total sales tax</td><td class="num">{{ invoice.sales_tax_total|amount }}</td></tr>
+          <tr class="fs-5 fw-bold table-light"><td>Grand total</td><td class="num">{{ invoice.grand_total|pkr }}</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div class="row mt-5 small">
+      <div class="col-6">Issued by: {{ invoice.issued_by|default:"system" }}</div>
+      <div class="col-6 text-end">Customer signature: ______________________</div>
+    </div>
+  </div>
+</div>
+{% endblock %}

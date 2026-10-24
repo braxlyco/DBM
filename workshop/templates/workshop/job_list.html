@@ -1,0 +1,73 @@
+{% extends "workshop/base.html" %}
+{% load dms %}
+{% block title %}Job cards — Workshop DMS{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Job cards</h1>
+  <a class="btn btn-primary" href="{% url 'workshop:job_create' %}">+ New job card</a>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-9">
+    <form class="row g-2 mb-3" method="get">
+      <div class="col-auto">
+        <select name="status" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">All statuses</option>
+          {% for value, label in statuses %}
+            <option value="{{ value }}" {% if value == current_status %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto">
+        <select name="branch" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">All branches</option>
+          {% for b in branches %}
+            <option value="{{ b.code }}" {% if b.code == current_branch %}selected{% endif %}>{{ b }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </form>
+
+    <div class="card shadow-sm">
+      <table class="table table-hover mb-0">
+        <thead class="table-light">
+          <tr><th>Job card</th><th>Status</th><th>Vehicle</th><th>Customer</th><th>Branch</th>
+              <th class="num">Estimate (PKR)</th><th>Opened</th></tr>
+        </thead>
+        <tbody>
+        {% for job in jobs %}
+          <tr>
+            <td><a href="{{ job.get_absolute_url }}">{{ job.number }}</a>
+                {% if job.parent_id %}<span class="badge text-bg-light border">comeback</span>{% endif %}</td>
+            <td><span class="badge text-bg-{{ job.status|status_class }}">{{ job.get_status_display }}</span></td>
+            <td>{{ job.vehicle.registration_no }} <small class="text-muted">{{ job.vehicle.make }} {{ job.vehicle.model }}</small></td>
+            <td>{{ job.customer.name }}</td>
+            <td>{{ job.branch.code }}</td>
+            <td class="num">{{ job.estimate_total|amount }}</td>
+            <td>{{ job.created_at|date:"d M Y H:i" }}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="text-center text-muted py-4">No job cards yet.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="col-lg-3">
+    <div class="card shadow-sm border-warning">
+      <div class="card-header bg-warning-subtle">Parts below reorder level</div>
+      <ul class="list-group list-group-flush">
+        {% for part in low_stock %}
+          <li class="list-group-item d-flex justify-content-between">
+            <span>{{ part.part_no }}<br><small class="text-muted">{{ part.name }} · {{ part.branch.code }}</small></span>
+            <span class="text-danger fw-semibold">{{ part.stock_on_hand|floatformat:"-2" }} / {{ part.reorder_level|floatformat:"-2" }}</span>
+          </li>
+        {% empty %}
+          <li class="list-group-item text-muted">All parts above reorder level.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}

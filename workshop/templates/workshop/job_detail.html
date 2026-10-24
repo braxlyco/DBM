@@ -1,0 +1,172 @@
+{% extends "workshop/base.html" %}
+{% load dms %}
+{% block title %}{{ job.number }} — Workshop DMS{% endblock %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+  <h1 class="h3 mb-0">{{ job.number }}
+    <span class="badge text-bg-{{ job.status|status_class }} align-middle fs-6">{{ job.get_status_display }}</span>
+    {% if job.is_read_only %}<span class="badge text-bg-light border align-middle fs-6">read-only</span>{% endif %}
+  </h1>
+  {% if invoice %}<a class="btn btn-dark" href="{{ invoice.get_absolute_url }}">View invoice {{ invoice.number }}</a>{% endif %}
+</div>
+
+{% if job.parent %}
+  <div class="alert alert-info">Comeback of <a href="{{ job.parent.get_absolute_url }}">{{ job.parent.number }}</a>
+    (the original job card is never edited).</div>
+{% endif %}
+
+<div class="row g-4">
+  <div class="col-lg-8">
+
+    <div class="card shadow-sm mb-4">
+      <div class="card-body">
+        <div class="row">
+          <dl class="col-md-6 mb-0">
+            <dt>Customer</dt><dd>{{ job.customer.name }} · {{ job.customer.phone }}</dd>
+            <dt>Vehicle</dt><dd>{{ job.vehicle.registration_no }} — {{ job.vehicle.make }} {{ job.vehicle.model }} {{ job.vehicle.year|default:"" }}
+              {% if job.vehicle.vin %}<br><small class="text-muted">VIN {{ job.vehicle.vin }}</small>{% endif %}</dd>
+            <dt>Odometer</dt><dd>{{ job.odometer_km|default:"—" }} km</dd>
+          </dl>
+          <dl class="col-md-6 mb-0">
+            <dt>Branch</dt><dd>{{ job.branch }}</dd>
+            <dt>Complaint / work requested</dt><dd>{{ job.complaint|linebreaksbr }}</dd>
+            {% if comebacks %}
+              <dt>Comebacks</dt>
+              <dd>{% for c in comebacks %}<a href="{{ c.get_absolute_url }}">{{ c.number }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</dd>
+            {% endif %}
+          </dl>
+        </div>
+      </div>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+      <div class="card-header d-flex justify-content-between">
+        <strong>Estimate</strong>
+        {% if job.estimate_total is not None %}
+          <span class="badge text-bg-info">Locked at approval: {{ job.estimate_total|pkr }}</span>
+        {% else %}
+          <span class="text-muted small">Editable until approved</span>
+        {% endif %}
+      </div>
+      {% include "workshop/_items_table.html" with lines=estimate_lines totals=estimate_totals removable=can_edit_estimate %}
+      {% if can_edit_estimate %}{% include "workshop/_add_item_forms.html" with stage="ESTIMATE" %}{% endif %}
+    </div>
+
+    {% if job.status != "DRAFT" and job.status != "CANCELLED" %}
+      <div class="card shadow-sm mb-4">
+        <div class="card-header d-flex justify-content-between">
+          <strong>Actual work (labour, parts consumed, sublet)</strong>
+          {% if job.status == "APPROVED" %}<span class="text-muted small">Start work to record actuals</span>{% endif %}
+          {% if job.status == "ON_HOLD" %}<span class="text-muted small">Resume work to record actuals</span>{% endif %}
+        </div>
+        {% include "workshop/_items_table.html" with lines=actual_lines totals=actual_totals removable=can_record_work %}
+        {% if can_record_work %}{% include "workshop/_add_item_forms.html" with stage="ACTUAL" %}{% endif %}
+      </div>
+    {% endif %}
+
+    {% if variance %}
+      <div class="card shadow-sm mb-4">
+        <div class="card-header">
+          <strong>{% if job.status == "COMPLETED" or job.status == "INVOICED" %}Estimate vs actual (final variance){% else %}Estimate vs actual (running){% endif %}</strong>
+        </div>
+        <table class="table table-sm mb-0">
+          <thead class="table-light"><tr><th></th><th class="num">Estimate</th><th class="num">Actual</th><th class="num">Variance</th><th class="num">%</th></tr></thead>
+          <tbody>
+          {% for row in variance %}
+            <tr class="{% if forloop.last %}fw-semibold{% endif %}">
+              <td>{{ row.label }}</td>
+              <td class="num">{{ row.estimate|amount }}</td>
+              <td class="num">{{ row.actual|amount }}</td>
+              <td class="num {% if row.variance > 0 %}text-danger{% elif row.variance < 0 %}text-success{% endif %}">{{ row.variance|amount }}</td>
+              <td class="num">{% if row.pct is not None %}{{ row.pct }}%{% else %}—{% endif %}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        <div class="card-footer small text-muted">Amounts in PKR, excl. sales tax. Positive = over estimate.</div>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card shadow-sm mb-4">
+      <div class="card-header"><strong>Actions</strong></div>
+      <div class="card-body">
+        {% if buttons %}
+          <form method="post" action="{% url 'workshop:job_transition' job.pk %}">{% csrf_token %}
+            <textarea name="note" rows="2" class="form-control mb-2" placeholder="Note / reason (required for hold or cancel)"></textarea>
+            <div class="d-grid gap-2">
+              {% for b in buttons %}
+                <button name="to_status" value="{{ b.status }}" class="btn btn-{{ b.style }}"
+                  {% if b.status == "INVOICED" or b.status == "CANCELLED" %}onclick="return confirm('{{ b.label }}? This cannot be undone.')"{% endif %}>
+                  {{ b.label }}</button>
+              {% endfor %}
+            </div>
+          </form>
+        {% elif job.status == "INVOICED" %}
+          <p class="mb-0 text-muted">Invoiced: this job card is read-only forever. A returning fault opens a new, linked job card.</p>
+        {% else %}
+          <p class="mb-0 text-muted">Cancelled: terminal state, no invoice.</p>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if job.status == "INVOICED" %}
+      <div class="card shadow-sm mb-4">
+        <div class="card-header"><strong>Comeback / reopen</strong></div>
+        <div class="card-body">
+          <form method="post" action="{% url 'workshop:job_comeback' job.pk %}">{% csrf_token %}
+            <textarea name="complaint" rows="2" class="form-control mb-2" placeholder="Describe the returning fault" required></textarea>
+            <button class="btn btn-outline-primary w-100">Open comeback job card</button>
+          </form>
+        </div>
+      </div>
+    {% endif %}
+
+    <div class="card shadow-sm mb-4">
+      <div class="card-header d-flex justify-content-between">
+        <strong>On-hold periods</strong><span class="small">Idle total: {{ job.idle_time|duration }}</span>
+      </div>
+      <ul class="list-group list-group-flush small">
+        {% for h in holds %}
+          <li class="list-group-item">
+            {{ h.entered_at|date:"d M H:i" }} → {% if h.left_at %}{{ h.left_at|date:"d M H:i" }}{% else %}<em>still on hold</em>{% endif %}
+            <span class="float-end">{{ h.duration|duration }}</span><br>
+            <span class="text-muted">{{ h.reason }}</span>
+          </li>
+        {% empty %}
+          <li class="list-group-item text-muted">Never on hold.</li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+      <div class="card-header"><strong>Status history (audit)</strong></div>
+      <ul class="list-group list-group-flush small">
+        {% for log in logs %}
+          <li class="list-group-item">
+            <strong>{{ log.from_status|default:"—" }} → {{ log.to_status }}</strong>
+            <span class="float-end text-muted">{{ log.changed_at|date:"d M Y H:i" }}</span><br>
+            by {{ log.changed_by|default:"system" }}{% if log.note %} · {{ log.note }}{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+      <div class="card-header"><strong>SAP postings</strong> <span class="small text-muted">(stub log)</span></div>
+      <ul class="list-group list-group-flush small">
+        {% for p in postings %}
+          <li class="list-group-item">
+            <a href="{% url 'admin:workshop_sappostinglog_change' p.pk %}">{{ p.get_event_type_display }}</a>
+            <span class="float-end">{{ p.total_debit|pkr }}</span><br>
+            <span class="text-muted">{{ p.idempotency_key }} · {{ p.get_status_display }}</span>
+          </li>
+        {% empty %}
+          <li class="list-group-item text-muted">Nothing posted yet.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}

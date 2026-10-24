@@ -1,0 +1,52 @@
+{% load dms %}
+<div class="row g-2 p-2 bg-body-tertiary border-top">
+  <div class="col-md-4">
+    <form method="post" action="{% url 'workshop:item_add' job.pk %}" class="border rounded p-2 h-100 bg-white">{% csrf_token %}
+      <input type="hidden" name="stage" value="{{ stage }}">
+      <input type="hidden" name="item_type" value="LABOUR">
+      <div class="small fw-semibold mb-1">Labour</div>
+      <select name="labour_operation" class="form-select form-select-sm mb-1" required>
+        <option value="">Choose operation…</option>
+        {% for op in labour_ops %}
+          <option value="{{ op.pk }}">{{ op.code }} — {{ op.name }} ({{ op.standard_hours|floatformat:"-2" }} h @ {{ op.hourly_rate|amount }}/h)</option>
+        {% endfor %}
+      </select>
+      <input name="quantity" type="number" step="0.01" min="0.01" class="form-control form-control-sm mb-1"
+             placeholder="Hours (blank = standard hours)">
+      <button class="btn btn-sm btn-outline-primary w-100">Add labour</button>
+    </form>
+  </div>
+  <div class="col-md-4">
+    <form method="post" action="{% url 'workshop:item_add' job.pk %}" class="border rounded p-2 h-100 bg-white">{% csrf_token %}
+      <input type="hidden" name="stage" value="{{ stage }}">
+      <input type="hidden" name="item_type" value="PART">
+      <div class="small fw-semibold mb-1">Part</div>
+      <select name="part" class="form-select form-select-sm mb-1" required>
+        <option value="">Choose part…</option>
+        {% for p in parts %}
+          <option value="{{ p.pk }}">{{ p.part_no }} — {{ p.name }} ({{ p.unit_price|amount }}; stock {{ p.stock_on_hand|floatformat:"-2" }}{% if p.is_below_reorder %} LOW{% endif %})</option>
+        {% endfor %}
+      </select>
+      <input name="quantity" type="number" step="0.01" min="0.01" value="1" class="form-control form-control-sm mb-1" required>
+      <button class="btn btn-sm btn-outline-primary w-100">
+        {% if stage == "ACTUAL" %}Issue part (consumes stock){% else %}Add part to estimate{% endif %}
+      </button>
+    </form>
+  </div>
+  <div class="col-md-4">
+    <form method="post" action="{% url 'workshop:item_add' job.pk %}" class="border rounded p-2 h-100 bg-white">{% csrf_token %}
+      <input type="hidden" name="stage" value="{{ stage }}">
+      <input type="hidden" name="item_type" value="SUBLET">
+      <div class="small fw-semibold mb-1">Sublet (outside work)</div>
+      <input name="description" class="form-control form-control-sm mb-1" required
+             placeholder="Work & vendor, e.g. Dent/paint — ABC Body Shop">
+      <div class="input-group input-group-sm mb-1">
+        <input name="unit_price" type="number" step="0.01" min="0" class="form-control" placeholder="Price to customer" required>
+        {% if stage == "ACTUAL" %}
+          <input name="unit_cost" type="number" step="0.01" min="0" class="form-control" placeholder="Vendor cost">
+        {% endif %}
+      </div>
+      <button class="btn btn-sm btn-outline-primary w-100">Add sublet</button>
+    </form>
+  </div>
+</div>
