@@ -13,6 +13,14 @@ class JobCardForm(forms.Form):
     odometer_km = forms.IntegerField(label="Odometer (km)", required=False, min_value=0)
     complaint = forms.CharField(label="Customer complaint / work requested", widget=forms.Textarea(attrs={"rows": 3}))
 
+    def clean(self):
+        data = super().clean()
+        branch = data.get("branch")
+        vehicle = data.get("vehicle")
+        if branch and vehicle and (vehicle.branch_id != branch.pk or vehicle.customer.branch_id != branch.pk):
+            self.add_error("vehicle", "Choose a vehicle belonging to this branch.")
+        return data
+
 
 class ItemForm(forms.Form):
     stage = forms.ChoiceField(choices=JobCardItem.Stage.choices)

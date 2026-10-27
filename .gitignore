@@ -2,3 +2,12 @@
 __pycache__/
 *.pyc
 db.sqlite3
+.env
+.env.*
+!.env.example
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+.idea/
+.vscode/

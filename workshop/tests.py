@@ -2,8 +2,10 @@
 from decimal import Decimal as D
 
 from django.test import TestCase
+from django.urls import reverse
 
 from . import workflow
+from .forms import JobCardForm
 from .models import (
     Branch, Customer, ImmutableRecordError, JobCard, JobCardItem, JobCardStatusLog, LabourOperation, Part,
     SapPostingLog, Vehicle,
@@ -133,3 +135,32 @@ class WorkflowTests(TestCase):
         self.assertEqual(comeback.parent, self.job)
         self.assertEqual(comeback.status, S.DRAFT)
         self.assertNotEqual(comeback.number, self.job.number)
+
+    def test_vehicle_must_match_branch(self):
+        other = Branch.objects.create(code="T02", name="Other", legal_name="Other", address="Karachi")
+        form = JobCardForm(data={
+            "branch": other.pk,
+            "vehicle": self.job.vehicle_id,
+            "complaint": "Inspection",
+        })
+        self.assertFalse(form.is_valid())
+        self.assertIn("vehicle", form.errors)
+        with self.assertRaises(workflow.WorkflowError):
+            workflow.create_job_card(branch=other, vehicle=self.job.vehicle, complaint="Inspection")
+
+    def test_job_list_search_and_pagination(self):
+        from django.contrib.auth import get_user_model
+
+        user = get_user_model().objects.create_user(username="operator", password="test-password")
+        self.client.force_login(user)
+        for index in range(25):
+            workflow.create_job_card(branch=self.branch, vehicle=self.job.vehicle, complaint=f"Job {index}")
+        url = reverse("workshop:job_list")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["jobs"]), 20)
+        self.assertEqual(response.context["page"].paginator.count, 26)
+        response = self.client.get(url, {"q": self.job.vehicle.registration_no})
+        self.assertEqual(response.context["page"].paginator.count, 26)
+        response = self.client.get(url, {"q": "nonexistent"})
+        self.assertEqual(response.context["page"].paginator.count, 0)

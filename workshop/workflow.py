@@ -58,6 +58,8 @@ def _log(job, from_status, to_status, user, note=""):
 
 @transaction.atomic
 def create_job_card(*, branch, vehicle, complaint, user=None, odometer_km=None, parent=None) -> JobCard:
+    if vehicle.branch_id != branch.pk or vehicle.customer.branch_id != branch.pk:
+        raise WorkflowError("The vehicle and customer must belong to the selected branch.")
     job = JobCard.objects.create(
         branch=branch, customer=vehicle.customer, vehicle=vehicle, complaint=complaint,
         odometer_km=odometer_km, parent=parent, created_by=user,

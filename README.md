@@ -1,67 +1,60 @@
-# Workshop DMS (MVP)
+# Workshop DMS
 
-A lightweight Dealer Management System for automotive workshops in Pakistan. It runs
-workshop operations (intake → estimate → repair → parts → invoice) and posts financial
-results to SAP FI. In this MVP the SAP posting is stubbed: payloads go to the **SAP posting log** table.
+A Django application for managing a workshop job from intake through invoicing. It brings job cards, estimates, actual work, parts consumption, tax calculations, and an audit trail into one workflow.
 
-## Run it (Windows, PowerShell)
+This is a working prototype for a Pakistan-based automotive workshop. It is intended for local evaluation and extension; tax rules and SAP account mappings must be verified before operational use.
+
+## What it does
+
+- Tracks job cards through **draft → approved → in progress → completed → invoiced**, with hold and cancellation paths.
+- Locks the approved estimate and preserves invoiced job cards as read-only records.
+- Records labour, parts and sublet work; consuming a part reduces stock and a reversal restores it.
+- Shows estimate-versus-actual variance and flags parts below their reorder level.
+- Calculates an itemised PKR invoice with separate goods and services tax rates configured per branch.
+- Writes balanced, idempotent accounting payloads to a local SAP posting log. No live SAP connection is included.
+- Supports searching and filtering job cards by number, vehicle, customer, status and branch.
+
+## Run locally
+
+Requires Python 3.11 or newer. SQLite is configured by default; no separate database server is needed.
 
 ```powershell
-cd "D:\VS CODE PROJECTS\DBM"
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-python manage.py migrate
-python manage.py seed_demo --with-invoice
-python manage.py createsuperuser
-python manage.py runserver
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe manage.py migrate
+.\.venv\Scripts\python.exe manage.py seed_demo --with-invoice
+.\.venv\Scripts\python.exe manage.py createsuperuser
+.\.venv\Scripts\python.exe manage.py runserver
 ```
 
-Open http://127.0.0.1:8000/ and log in with the user you just created.
-Admin (master data): http://127.0.0.1:8000/admin/
+Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/) and sign in. Master data is managed at [http://127.0.0.1:8000/admin/](http://127.0.0.1:8000/admin/). The seed command creates fictional data and can be run again without duplicating its main records.
 
-If `Activate.ps1` is blocked ("running scripts is disabled"), run this once and then activate again:
-`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`
+On macOS or Linux, activate the virtual environment with `source .venv/bin/activate`, then use `python` in place of `.\.venv\Scripts\python.exe`.
 
-Run the tests: `python manage.py test workshop`
+## Checks
 
-## Where things are
+```powershell
+.\.venv\Scripts\python.exe manage.py check
+.\.venv\Scripts\python.exe manage.py test workshop
+```
 
-| File | What it does |
-|---|---|
-| `workshop/models.py` | Data model and the rules that must never break (immutability, estimate lock, append-only audit). |
-| `workshop/workflow.py` | Job-card state machine (`ALLOWED_TRANSITIONS`, `guard_transition`) and every operation that changes a job card. |
-| `workshop/finance.py` | `FinancePoster` interface, `LoggingAdapter`, and the builders for invoice and parts posting events. |
-| `workshop/views.py`, `templates/` | Screens: job list, new job, job card, printable invoice. |
-| `workshop/admin.py` | Master data CRUD; operational and financial records are view-only. |
-| `workshop/management/commands/seed_demo.py` | Demo data. |
-| `dms_project/settings.py` | Settings, Postgres switch, SAP GL mapping (placeholders). |
+GitHub Actions runs the same checks on each push and pull request.
 
-## NOTES: placeholders and assumptions to verify
+## How it is organised
 
-**Tax / FBR (verify with a tax adviser)**
-1. Invoice fields follow my understanding of a sales tax invoice under the Sales Tax Act 1990: serial number, date, seller name, address, NTN and STRN, buyer details, description, quantity, value excl. tax, rate, tax and value incl. tax. They are not verified against current FBR rules.
-2. FBR digital invoicing / POS integration (FBR-issued invoice number, QR code, PRAL API) is not built. The invoice shows a `[PLACEHOLDER]` row for it.
-3. Rates are 18% on goods (parts) and 16% on services (labour and sublet), set per Branch. Sales tax on services is provincial (PRA, SRB, KPRA, BRA). Check the rates, whether workshop labour and sublet are taxable in your province, and whether goods and services may share one invoice.
-4. Tax is rounded per line (half-up) so the printed lines add up. Check that this is acceptable.
-5. Extra or further tax on supplies to unregistered buyers may apply. It is not implemented.
-6. The seeded NTN, STRN and PRA numbers are dummies. The HS codes are 6-digit, while Pakistan uses 8-digit PCT codes.
-7. Not built: credit notes or invoice cancellation, amount in words, the required invoice-number format (current format is `LHR01-INV-000001`, gap-free per branch).
+| Area | Responsibility |
+| --- | --- |
+| `workshop/models.py` | Domain records, calculated amounts and immutability rules |
+| `workshop/workflow.py` | Valid status transitions and transactional business operations |
+| `workshop/finance.py` | Balanced accounting events and the replaceable posting adapter |
+| `workshop/views.py`, `workshop/templates/` | Operator screens and printable invoice |
+| `workshop/admin.py` | Master data management and read-only operational records |
+| `workshop/management/commands/seed_demo.py` | Fictional demonstration data |
 
-**SAP FI**
+The workflow writes the job change, status history, stock adjustment and accounting log in a database transaction. A failure rolls the operation back. The default `LoggingAdapter` records an outbox entry; it does not send data to SAP.
 
-8. GL accounts, company code, document types (DR/SA), profit center and the one-time customer are placeholders (`DMS_SAP_*` in settings, `Branch.sap_profit_center`, `Customer.sap_customer_no`).
-9. If SAP MM manages inventory, a parts issue should be an MM goods movement, not an FI COGS/inventory posting, and DMS stock would only mirror SAP. This is a design decision to confirm.
-10. Postings are written to `SapPostingLog` in the same database transaction as the business change (an outbox). A real adapter should send them from that log asynchronously, retry, and set status POSTED or FAILED with the SAP document number. The idempotency key already prevents double posting.
-11. Sublet vendor cost (AP) and customer payments or receipts are not posted. They are out of scope.
+## Configuration and scope
 
-**Business-rule assumptions**
+Development defaults are in `dms_project/settings.py`. Set `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=0` and `DJANGO_ALLOWED_HOSTS` before deploying. Do not publish `db.sqlite3` or real customer information; the database and virtual environment are excluded from Git.
 
-12. The estimate total and the variance exclude tax.
-13. Issuing more parts than are in stock is blocked (stock never goes negative), and the message suggests putting the job ON HOLD. Falling below the reorder level only shows a warning.
-14. Removing a consumed part line while the job is IN_PROGRESS returns the part to stock and posts a reversal.
-15. CANCELLED job cards are read-only, like INVOICED ones. Comebacks can only be raised from INVOICED job cards.
-16. There are no roles or branch restrictions: any logged-in user can approve, invoice, and act on any branch.
-17. Stock receipts and adjustments are made by editing `stock_on_hand` in the admin, and those edits are not audited.
-18. Prices come from the catalogue only. There are no discounts or price overrides.
-19. Not production-ready: DEBUG is on, the dev secret key is in use, and the database is SQLite.
+The tax rates and registration details in the sample data are **illustrative**, not verified compliance advice. FBR digital invoicing, credit notes, payments, branch-level permissions, audited stock receipts and live SAP integration are not implemented. The SAP GL numbers, company code and profit centre are placeholders. A real deployment needs verified tax rules, production database and security review.

@@ -1,6 +1,7 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.db.models import F
+from django.core.paginator import Paginator
+from django.db.models import F, Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
@@ -18,7 +19,7 @@ TRANSITION_BUTTONS = {
     S.IN_PROGRESS: ("Start work", "primary"),
     S.ON_HOLD: ("Put on hold", "warning"),
     S.COMPLETED: ("Mark completed", "success"),
-    S.INVOICED: ("Generate invoice & post to SAP", "dark"),
+    S.INVOICED: ("Generate invoice & log SAP posting", "dark"),
     S.CANCELLED: ("Cancel (customer declined)", "outline-danger"),
 }
 
@@ -28,16 +29,26 @@ def job_list(request):
     jobs = JobCard.objects.select_related("branch", "customer", "vehicle")
     status = request.GET.get("status", "")
     branch = request.GET.get("branch", "")
+    query = request.GET.get("q", "").strip()[:100]
     if status in S.values:
         jobs = jobs.filter(status=status)
     if branch:
         jobs = jobs.filter(branch__code=branch)
+    if query:
+        jobs = jobs.filter(
+            Q(number__icontains=query)
+            | Q(vehicle__registration_no__icontains=query)
+            | Q(customer__name__icontains=query)
+        )
+    page = Paginator(jobs, 20).get_page(request.GET.get("page"))
     return render(request, "workshop/job_list.html", {
-        "jobs": jobs,
+        "jobs": page,
+        "page": page,
         "statuses": S.choices,
         "branches": Branch.objects.all(),
         "current_status": status,
         "current_branch": branch,
+        "current_query": query,
         "low_stock": Part.objects.filter(stock_on_hand__lt=F("reorder_level")).select_related("branch"),
     })
 
